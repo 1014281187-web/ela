@@ -84,7 +84,7 @@ svg{display:block}
 .btn:disabled{opacity:.4;cursor:default}
 
 /* ---------- 分类标签 ---------- */
-.tabs{display:flex;gap:8px;overflow-x:auto;padding:2px 0 16px;scrollbar-width:none}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;padding:2px 0 16px}
 .tabs::-webkit-scrollbar{display:none}
 .chip{
   display:inline-flex;align-items:center;gap:7px;flex:none;
@@ -648,6 +648,64 @@ function enableTabDrag(el){
       });
     });
   });
+  enableTouchDrag(el);
+}
+
+/* 触屏长按拖动排序（iOS/Android 上 HTML5 DnD 不生效，用 touch 事件模拟） */
+function enableTouchDrag(el){
+  let dragChip=null,startX=0,startY=0,longPress=null,dragging=false;
+  const isCatChip=ch=>ch&&ch.dataset.tab&&ch.dataset.tab!=='all';
+  function commitMove(target){
+    if(!dragChip||!target||target===dragChip)return;
+    const fromIdx=state.categories.findIndex(c=>String(c.id)===dragChip.dataset.tab);
+    const toIdx=state.categories.findIndex(c=>String(c.id)===target.dataset.tab);
+    if(fromIdx<0||toIdx<0)return;
+    const [moved]=state.categories.splice(fromIdx,1);
+    state.categories.splice(toIdx,0,moved);
+    saveCatOrder().then(()=>{
+      renderTabs();
+      if(!$('#settingsOverlay').classList.contains('hidden'))renderSettings();
+    });
+  }
+  el.addEventListener('touchstart',e=>{
+    const ch=e.target.closest('.chip');
+    if(!isCatChip(ch))return;
+    dragChip=ch;dragging=false;
+    const t=e.touches[0];
+    startX=t.clientX;startY=t.clientY;
+    longPress=setTimeout(()=>{
+      dragging=true;
+      dragChip.classList.add('dragging');
+      if(navigator.vibrate)navigator.vibrate(30);
+    },350);
+  },{passive:true});
+  el.addEventListener('touchmove',e=>{
+    if(!dragChip)return;
+    const t=e.touches[0];
+    if(!dragging){
+      if(Math.abs(t.clientX-startX)>10||Math.abs(t.clientY-startY)>10){
+        clearTimeout(longPress);dragChip=null;
+      }
+      return;
+    }
+    e.preventDefault();
+    // 命中手指下方（非拖动中）的 chip，实时交换
+    dragChip.style.pointerEvents='none';
+    const under=document.elementFromPoint(t.clientX,t.clientY);
+    dragChip.style.pointerEvents='';
+    const target=under&&under.closest('.chip');
+    if(isCatChip(target))commitMove(target);
+  },{passive:false});
+  el.addEventListener('touchend',()=>{
+    clearTimeout(longPress);
+    if(dragChip)dragChip.classList.remove('dragging');
+    dragChip=null;dragging=false;
+  });
+  el.addEventListener('touchcancel',()=>{
+    clearTimeout(longPress);
+    if(dragChip)dragChip.classList.remove('dragging');
+    dragChip=null;dragging=false;
+  });
 }
 
 function filteredRecipes(){
@@ -993,20 +1051,55 @@ const TIPS=[
   {name:'番茄酱/番茄沙司',tag:'酸甜调味',desc:'番茄酱是纯番茄浓缩（做糖醋汁、罗宋汤），沙司是调过味的（直接蘸薯条）。糖醋汁黄金比例：1 料酒 2 生抽 3 糖 4 醋 5 水。',pairs:['糖醋','茄汁','罗宋汤']},
   {name:'黑胡椒/白胡椒',tag:'辛香',desc:'黑胡椒香烈配牛肉、西式做法，出锅前现磨；白胡椒温和去寒，适合汤类和羊肉，煲汤时直接撒。',pairs:['牛排','黑椒牛柳','羊汤','酸辣汤']},
 ];
+/* 在我的菜谱里找用到该调料的菜（调料清单、食材、步骤、菜名都算） */
+function recipesWithSeasoning(name){
+  const key=name.toLowerCase();
+  return state.recipes.filter(r=>{
+    const hay=[
+      ...(r.seasonings||[]), ...(r.ingredients||[]), ...(r.steps||[]), r.name||''
+    ].join(' ').toLowerCase();
+    return hay.includes(key);
+  });
+}
 function renderTips(q){
   const list=$('#tipsList');
   const kw=(q||'').trim().toLowerCase();
   const items=kw?TIPS.filter(t=>(t.name+t.tag+t.desc+t.pairs.join('')).toLowerCase().includes(kw)):TIPS;
-  if(!items.length){
+  // 搜索词同时匹配我的菜谱（菜名/食材/调料/步骤），单独一栏展示
+  const myHits=kw?state.recipes.filter(r=>
+    (r.name+' '+(r.ingredients||[]).join(' ')+' '+(r.seasonings||[]).join(' ')+' '+(r.steps||[]).join(' ')).toLowerCase().includes(kw)
+  ).slice(0,6):[];
+  let html='';
+  if(myHits.length){
+    html+=`<div class="tip-card" style="border-color:#F0C9A8">
+      <h5>我的菜谱<span class="tip-tag">搜索匹配 ${myHits.length} 道</span></h5>
+      <div class="pairs">${myHits.map(r=>
+        `<span style="cursor:pointer" data-tip-recipe="${r.id}" role="button">${esc(r.name)} · ${esc(catName(r.categoryId))}</span>`).join('')}</div>
+    </div>`;
+  }
+  if(!items.length&&!myHits.length){
     list.innerHTML='<p class="tip-empty">没有找到相关内容，换个词试试（比如：生抽、去腥、红烧）。</p>';
     return;
   }
-  list.innerHTML=items.map(t=>`
+  html+=items.map(t=>{
+    const mine=recipesWithSeasoning(t.name.split('/')[0]);
+    return `
     <div class="tip-card">
       <h5>${esc(t.name)}<span class="tip-tag">${esc(t.tag)}</span></h5>
       <p>${esc(t.desc)}</p>
       <div class="pairs">${t.pairs.map(p=>`<span>${esc(p)}</span>`).join('')}</div>
-    </div>`).join('');
+      ${mine.length?`<div class="mine-row">
+        <span class="mine-label">我做过（${mine.length}）：</span>
+        ${mine.slice(0,6).map(r=>`<span class="mine-link" data-tip-recipe="${r.id}" role="button">${esc(r.name)}</span>`).join('')}
+      </div>`:''}
+    </div>`;
+  }).join('');
+  list.innerHTML=html;
+  list.querySelectorAll('[data-tip-recipe]').forEach(el=>el.addEventListener('click',()=>{
+    const id=Number(el.dataset.tipRecipe);
+    $('#tipsOverlay').classList.add('hidden');
+    openDetail(id);
+  }));
 }
 $('#tipsBtn').addEventListener('click',()=>{
   $('#tipsSearch').value='';
@@ -1064,13 +1157,13 @@ $('#importInput').addEventListener('change',async e=>{
       state.categories.push({id,name,color:c.color||PALETTE[(state.categories.length)%PALETTE.length]});
       catMap[c.id]=id;
     }
-    let n=0;
+    let added=0,updated=0,skipped=0;
     for(const r of data.recipes){
       const images=[];
       for(const du of (r.images||[])){
         try{images.push(await (await fetch(du)).blob());}catch(_){}
       }
-      await idbPut('recipes',{
+      const incoming={
         name:String(r.name||'未命名菜谱'),
         categoryId:r.categoryId!=null?(catMap[r.categoryId]??null):null,
         images,
@@ -1080,13 +1173,36 @@ $('#importInput').addEventListener('change',async e=>{
         notes:String(r.notes||''),
         favorite:!!r.favorite,
         createdAt:Number(r.createdAt)||Date.now(),
-        updatedAt:Date.now(),
-      });
-      n++;
+        updatedAt:Number(r.updatedAt)||0,
+      };
+      // 智能合并：同名菜谱按更新时间取舍；不同名直接新增
+      const sameName=state.recipes.filter(x=>x.name===incoming.name);
+      if(sameName.length){
+        const incomingKey=JSON.stringify([incoming.ingredients,incoming.seasonings,incoming.steps,incoming.notes,incoming.images.length,incoming.favorite]);
+        const existing=sameName[0];
+        const existingKey=JSON.stringify([existing.ingredients||[],existing.seasonings||[],existing.steps||[],existing.notes||'',(existing.images||[]).length,!!existing.favorite]);
+        if(incomingKey===existingKey){
+          skipped++;
+          if(incoming.updatedAt>existing.updatedAt){existing.updatedAt=incoming.updatedAt;await idbPut('recipes',existing);}
+          continue;
+        }
+        // 内容不同：留更新时间新的一方
+        if(incoming.updatedAt&&(existing.updatedAt||0)>=incoming.updatedAt){
+          skipped++;
+          continue;
+        }
+        incoming.id=existing.id;
+        incoming.favorite=incoming.favorite||existing.favorite;
+        await idbPut('recipes',incoming);
+        updated++;
+        continue;
+      }
+      await idbPut('recipes',incoming);
+      added++;
     }
     await loadData();renderTabs();renderGrid();renderSettings();
     $('#settingsOverlay').classList.add('hidden');
-    toast(`已导入 ${n} 道菜谱`);
+    toast(`新增 ${added} 道 · 更新 ${updated} 道 · 相同跳过 ${skipped} 道`);
   }catch(err){
     toast('导入失败：这不是有效的备份文件');
   }
