@@ -96,6 +96,11 @@ svg{display:block}
 .chip .cnt{font-family:var(--font-mono);font-size:12px;opacity:.75}
 .chip .cdot{width:8px;height:8px;border-radius:50%;background:var(--c,#C4A98F)}
 .chip.on{background:var(--green);border-color:var(--green);color:#FFF8F0}
+.chip.dragging{opacity:.45;transform:scale(.95)}
+.chip.drag-over{border-color:var(--green);box-shadow:0 0 0 2px var(--celadon) inset}
+.cat-line .mv{color:#B99A85;padding:4px;border-radius:8px}
+.cat-line .mv:disabled{opacity:.25;cursor:default}
+.cat-line .mv:not(:disabled):hover{color:var(--green);background:#FAEFE0}
 
 /* ---------- 菜谱卡片 ---------- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:18px}
@@ -229,6 +234,15 @@ svg{display:block}
 .about-text{font-size:14px;color:var(--ink2);line-height:1.9}
 .about-text b{color:var(--ink)}
 
+/* ---------- 调料小科普 ---------- */
+.tip-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:14px}
+.tip-card h5{font-family:var(--font-display);font-size:17px;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.tip-card h5 .tip-tag{font-family:var(--font-body);font-size:11px;letter-spacing:1px;color:var(--green);background:#FAEFE0;border-radius:999px;padding:2px 9px;font-weight:600}
+.tip-card p{font-size:14px;line-height:1.8;color:var(--ink)}
+.tip-card .pairs{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.tip-card .pairs span{font-size:12.5px;background:#FAEFE0;color:#8A5A3B;border-radius:8px;padding:3px 9px}
+.tip-empty{text-align:center;color:var(--ink2);padding:50px 20px;font-size:14px}
+
 /* ---------- 灶台模式 ---------- */
 #cookOverlay{background:var(--green-deep);color:#FFF8F0;display:flex;flex-direction:column}
 .cook-bar{height:4px;background:rgba(255,248,240,.16);flex:none}
@@ -323,6 +337,9 @@ svg{display:block}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input id="search" type="search" placeholder="搜菜名或食材…" autocomplete="off">
       </div>
+      <button class="btn icon" id="tipsBtn" title="调料小科普" aria-label="调料小科普">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-4 10.4c.6.6 1 1.4 1 2.6h6c0-1.2.4-2 1-2.6A6 6 0 0 0 12 3z"/></svg>
+      </button>
       <button class="btn icon" id="favToggle" title="只看收藏" aria-label="只看收藏">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
       </button>
@@ -433,6 +450,26 @@ svg{display:block}
   </div>
 </div>
 
+<!-- 调料小科普 -->
+<div class="overlay hidden" id="tipsOverlay">
+  <div class="wrap" style="max-width:680px">
+    <div class="topbar">
+      <span class="title">调料小科普</span>
+      <button class="btn icon" id="tipsClose" aria-label="关闭">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="field">
+      <div class="search-box" style="min-width:0">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="tipsSearch" type="search" placeholder="搜调料名或菜类，如：生抽、红烧…" autocomplete="off">
+      </div>
+    </div>
+    <div id="tipsList"></div>
+    <div style="height:40px"></div>
+  </div>
+</div>
+
 <!-- 灶台模式 -->
 <div class="overlay hidden" id="cookOverlay">
   <div class="cook-bar"><i id="cookBarFill" style="width:0"></i></div>
@@ -540,8 +577,16 @@ function catColor(id){const c=catById(id);return c?c.color:'#C4A98F';}
 function catName(id){const c=catById(id);return c?c.name:'未分类';}
 
 async function loadData(){
-  state.categories=(await idbAll('categories')).sort((a,b)=>a.id-b.id);
+  const cats=await idbAll('categories');
+  cats.sort((a,b)=>(a.order??a.id)-(b.order??b.id));
+  state.categories=cats;
   state.recipes=(await idbAll('recipes')).sort((a,b)=>b.createdAt-a.createdAt);
+}
+async function saveCatOrder(){
+  for(let i=0;i<state.categories.length;i++){
+    const c=state.categories[i];
+    if(c.order!==i+1){c.order=i+1;await idbPut('categories',c);}
+  }
 }
 
 /* ============ 渲染 ============ */
@@ -554,7 +599,7 @@ function renderTabs(){
   }
   let html=`<button class="chip ${state.tab==='all'?'on':''}" data-tab="all">全部 <span class="cnt">${counts.all}</span></button>`;
   for(const c of state.categories){
-    html+=`<button class="chip ${state.tab===c.id?'on':''}" data-tab="${c.id}">
+    html+=`<button class="chip ${state.tab===c.id?'on':''}" data-tab="${c.id}" draggable="true">
       <span class="cdot" style="--c:${esc(c.color)}"></span>${esc(c.name)} <span class="cnt">${counts[c.id]||0}</span></button>`;
   }
   el.innerHTML=html;
@@ -562,6 +607,47 @@ function renderTabs(){
     state.tab=ch.dataset.tab==='all'?'all':Number(ch.dataset.tab);
     renderTabs();renderGrid();
   }));
+  enableTabDrag(el);
+}
+
+/* 顶部标签拖动排序（仅分类 chip，"全部"固定最左） */
+function enableTabDrag(el){
+  let dragChip=null;
+  el.querySelectorAll('.chip[data-tab]:not([data-tab="all"])').forEach(ch=>{
+    ch.addEventListener('dragstart',e=>{
+      dragChip=ch;
+      ch.classList.add('dragging');
+      e.dataTransfer.effectAllowed='move';
+      try{e.dataTransfer.setData('text/plain',ch.dataset.tab);}catch(_){}
+    });
+    ch.addEventListener('dragend',()=>{
+      ch.classList.remove('dragging');
+      el.querySelectorAll('.chip').forEach(c=>c.classList.remove('drag-over'));
+      dragChip=null;
+    });
+    ch.addEventListener('dragover',e=>{
+      if(!dragChip||dragChip===ch)return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect='move';
+      ch.classList.add('drag-over');
+    });
+    ch.addEventListener('dragleave',()=>ch.classList.remove('drag-over'));
+    ch.addEventListener('drop',e=>{
+      e.preventDefault();
+      ch.classList.remove('drag-over');
+      if(!dragChip||dragChip===ch)return;
+      const fromIdx=state.categories.findIndex(c=>String(c.id)===dragChip.dataset.tab);
+      const toIdx=state.categories.findIndex(c=>String(c.id)===ch.dataset.tab);
+      if(fromIdx<0||toIdx<0)return;
+      const [moved]=state.categories.splice(fromIdx,1);
+      state.categories.splice(toIdx,0,moved);
+      dragChip=null;
+      saveCatOrder().then(()=>{
+        renderTabs();
+        if(!$('#settingsOverlay').classList.contains('hidden'))renderSettings();
+      });
+    });
+  });
 }
 
 function filteredRecipes(){
@@ -836,15 +922,30 @@ $('#fSave').addEventListener('click',async()=>{
 function renderSettings(){
   const counts={};
   for(const r of state.recipes){const k=r.categoryId??0;counts[k]=(counts[k]||0)+1;}
-  $('#catList').innerHTML=state.categories.map(c=>`
+  $('#catList').innerHTML=state.categories.map((c,idx)=>`
     <div class="cat-line">
       <span class="cdot" style="--c:${esc(c.color)}"></span>
       <span class="cname">${esc(c.name)}</span>
       <span class="cnt">${counts[c.id]||0} 道</span>
+      <button class="mv" data-up="${c.id}" aria-label="上移" ${idx===0?'disabled':''}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+      </button>
+      <button class="mv" data-down="${c.id}" aria-label="下移" ${idx===state.categories.length-1?'disabled':''}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
       <button class="rm" data-del="${c.id}" aria-label="删除分类">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
       </button>
     </div>`).join('')||'<p class="set-note" style="margin:0">还没有分类，先添加一个吧。</p>';
+  $('#catList').querySelectorAll('[data-up],[data-down]').forEach(b=>b.addEventListener('click',()=>{
+    const id=Number(b.dataset.up||b.dataset.down);
+    const idx=state.categories.findIndex(c=>c.id===id);
+    const to=b.dataset.up?idx-1:idx+1;
+    if(idx<0||to<0||to>=state.categories.length)return;
+    const [moved]=state.categories.splice(idx,1);
+    state.categories.splice(to,0,moved);
+    saveCatOrder().then(()=>{renderTabs();renderSettings();});
+  }));
   $('#catList').querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{
     const id=Number(b.dataset.del);
     const c=catById(id);
@@ -870,6 +971,55 @@ $('#addCatBtn').addEventListener('click',async()=>{
   toast('已添加分类');
 });
 $('#newCatName').addEventListener('keydown',e=>{if(e.key==='Enter')$('#addCatBtn').click();});
+
+/* ============ 调料小科普 ============ */
+const TIPS=[
+  {name:'生抽',tag:'调味基础',desc:'提鲜增咸的主力，颜色较浅。炒菜、凉拌、腌肉都靠它打底。做菜时「先生抽后盐」，最后尝味再补盐，避免过咸。',pairs:['炒青菜','凉拌','腌肉','蘸料']},
+  {name:'老抽',tag:'上色',desc:'颜色深、微甜，基本不提供咸味，专为上色存在。红烧、卤味、酱焖类菜最后补一点，上色就够，放早了颜色发黑发苦。',pairs:['红烧','卤味','酱焖']},
+  {name:'蚝油',tag:'提鲜',desc:'牡蛎熬出的鲜味浓缩，咸中带甜。绿叶菜出锅前加一勺立刻有馆子味；不适合久煮（鲜味会散），也不适合腌辣菜。',pairs:['青菜','菌菇','牛肉','拌面']},
+  {name:'料酒',tag:'去腥',desc:'去腥解腻，靠酒精带走腥味，所以要沿锅边淋入让酒气蒸发。腌肉去腥有效；炖汤要少放或不放，避免留酒味。',pairs:['炒肉','炖鱼','腌肉']},
+  {name:'香醋/陈醋',tag:'酸香',desc:'陈醋味重适合红烧、酸辣类；香醋（米醋）味柔适合蘸饺子、拌凉菜。醋遇热会挥发酸味，想要酸香突出就关火前再放。',pairs:['饺子蘸料','凉拌菜','酸辣汤','糖醋']},
+  {name:'白糖/冰糖',tag:'和味提鲜',desc:'不是为了让菜变甜，而是中和咸味、让味道更圆润。炒糖色是红烧肉红亮的关键；冰糖做出来颜色更亮。',pairs:['红烧','糖醋','卤味','提鲜']},
+  {name:'盐',tag:'百味之本',desc:'最后放的调味，放早了肉会变柴、青菜出水。炖汤要起锅前放；炒菜在食材断生时放，翻匀即可出锅。',pairs:['通用','炖汤','炒菜']},
+  {name:'八角（大料）',tag:'炖卤香料',desc:'浓香的炖卤灵魂，一颗就够，多则发苦。适合长时间炖煮的肉菜，快炒菜千万别放。',pairs:['炖肉','卤味','红烧牛肉']},
+  {name:'香叶/桂皮/草果',tag:'炖卤香料',desc:'卤水三件套：桂皮出甜香、香叶出清香、草果去异增香。整颗下锅，吃前捞出；卤过一次的香料包冷冻可再用一次。',pairs:['卤味','炖肉','酱牛肉']},
+  {name:'花椒',tag:'麻香',desc:'川菜之魂，麻而不辣。炝锅时冷油下花椒小火炸香再捞掉，麻味更干净；拌凉菜用花椒油比花椒粒方便。',pairs:['川菜','炝锅','凉拌','水煮']},
+  {name:'干辣椒/辣椒面',tag:'辣香',desc:'干辣椒炝锅要小火，炒糊会发苦；辣椒面适合做油泼辣子，热油分三次泼激出香味。想要「香辣」用二荆条，「暴辣」配朝天椒。',pairs:['油泼','干锅','水煮鱼','凉拌']},
+  {name:'姜/蒜/葱',tag:'辛香三件套',desc:'炝锅顺序「先姜后蒜再葱」，蒜末最后出锅前放半份更香。姜适合腌肉炖鱼，葱分葱白（炝锅）和葱花（点缀）。',pairs:['炝锅','腌肉','蒸鱼','炒菜']},
+  {name:'淀粉',tag:'勾芡嫩肉',desc:'腌肉时加薄薄一层水淀粉，肉会嫩滑不柴（上浆）；炒菜汁太多时淋芡水让汤汁挂住食材。记口诀「肉上浆、汤勾芡」。',pairs:['炒肉','滑蛋','汤羹']},
+  {name:'香油/芝麻油',tag:'点睛',desc:'香味遇热即散，只用于出锅前几滴或直接凉拌。汤里滴两滴立刻有食欲，炒菜过程别放。',pairs:['凉拌','汤面','蘸料']},
+  {name:'十三香/五香粉',tag:'复合香料',desc:'多种香料的现成混合，适合懒人炖馅类：饺子馅、丸子、炖菜各放一小勺即可。炒菜少用，容易抢味。',pairs:['饺子馅','丸子','炖菜']},
+  {name:'豆瓣酱',tag:'川味之魂',desc:'郫县豆瓣酱是川菜底味，要先剁细、小火炒出红油再下菜，这就是「炒出红油」的意思。做回锅肉、麻婆豆腐的必备。',pairs:['回锅肉','麻婆豆腐','水煮','干锅']},
+  {name:'番茄酱/番茄沙司',tag:'酸甜调味',desc:'番茄酱是纯番茄浓缩（做糖醋汁、罗宋汤），沙司是调过味的（直接蘸薯条）。糖醋汁黄金比例：1 料酒 2 生抽 3 糖 4 醋 5 水。',pairs:['糖醋','茄汁','罗宋汤']},
+  {name:'黑胡椒/白胡椒',tag:'辛香',desc:'黑胡椒香烈配牛肉、西式做法，出锅前现磨；白胡椒温和去寒，适合汤类和羊肉，煲汤时直接撒。',pairs:['牛排','黑椒牛柳','羊汤','酸辣汤']},
+];
+function renderTips(q){
+  const list=$('#tipsList');
+  const kw=(q||'').trim().toLowerCase();
+  const items=kw?TIPS.filter(t=>(t.name+t.tag+t.desc+t.pairs.join('')).toLowerCase().includes(kw)):TIPS;
+  if(!items.length){
+    list.innerHTML='<p class="tip-empty">没有找到相关内容，换个词试试（比如：生抽、去腥、红烧）。</p>';
+    return;
+  }
+  list.innerHTML=items.map(t=>`
+    <div class="tip-card">
+      <h5>${esc(t.name)}<span class="tip-tag">${esc(t.tag)}</span></h5>
+      <p>${esc(t.desc)}</p>
+      <div class="pairs">${t.pairs.map(p=>`<span>${esc(p)}</span>`).join('')}</div>
+    </div>`).join('');
+}
+$('#tipsBtn').addEventListener('click',()=>{
+  $('#tipsSearch').value='';
+  renderTips('');
+  $('#tipsOverlay').classList.remove('hidden');
+  $('#tipsOverlay').scrollTop=0;
+});
+$('#tipsClose').addEventListener('click',()=>$('#tipsOverlay').classList.add('hidden'));
+let tipsTimer=null;
+$('#tipsSearch').addEventListener('input',e=>{
+  clearTimeout(tipsTimer);
+  tipsTimer=setTimeout(()=>renderTips(e.target.value),120);
+});
 
 /* 备份导出 */
 function blobToDataURL(b){
@@ -1004,6 +1154,7 @@ document.addEventListener('keydown',e=>{
     if(!$('#confirmMask').classList.contains('hidden'))return closeConfirm();
     if(!$('#ingPanel').classList.contains('hidden'))return $('#ingPanel').classList.add('hidden');
     if(!$('#cookOverlay').classList.contains('hidden'))return $('#cookOverlay').classList.add('hidden');
+    if(!$('#tipsOverlay').classList.contains('hidden'))return $('#tipsOverlay').classList.add('hidden');
     if(!$('#formOverlay').classList.contains('hidden'))return $('#formOverlay').classList.add('hidden');
     if(!$('#settingsOverlay').classList.contains('hidden'))return $('#settingsOverlay').classList.add('hidden');
     if(!$('#detailOverlay').classList.contains('hidden'))return closeDetail();
