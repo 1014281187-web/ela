@@ -437,6 +437,10 @@ svg{display:block}
           导入备份
         </button>
         <input type="file" id="importInput" accept=".json,application/json" class="hidden">
+        <button class="btn danger" id="wipeBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg>
+          清空全部数据
+        </button>
       </div>
       <p class="set-note">所有菜谱和图片只保存在这台设备的浏览器里，不会上传到任何服务器。建议每隔一段时间导出一次备份；换新设备时用「导入备份」恢复。</p>
     </div>
@@ -531,9 +535,9 @@ function toast(msg){
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2200);
 }
 let confirmOk=null;
-function showConfirm(text,onOk){
+function showConfirm(text,onOk,okLabel){
   $('#confirmText').textContent=text;confirmOk=onOk;
-  $('#confirmOk').textContent='删除';
+  $('#confirmOk').textContent=okLabel||'删除';
   $('#confirmMask').classList.remove('hidden');
   $('#confirmCancel').focus();
 }
@@ -1112,6 +1116,25 @@ let tipsTimer=null;
 $('#tipsSearch').addEventListener('input',e=>{
   clearTimeout(tipsTimer);
   tipsTimer=setTimeout(()=>renderTips(e.target.value),120);
+});
+
+/* 清空全部数据（菜谱+分类都删，二次确认） */
+$('#wipeBtn').addEventListener('click',()=>{
+  const n=state.recipes.length;
+  if(!n)return toast('当前没有菜谱，无需清空');
+  showConfirm(`确定清空全部 ${n} 道菜谱和所有分类吗？此操作无法恢复，建议先「导出备份」留底。`,async()=>{
+    const stores=['recipes','categories'];
+    for(const s of stores){
+      await new Promise((res,rej)=>{
+        const t=db.transaction(s,'readwrite').objectStore(s).clear();
+        t.onsuccess=res;t.onerror=()=>rej(t.error);
+      });
+    }
+    state.tab='all';state.q='';$('#search').value='';
+    state.favOnly=false;$('#favToggle').classList.remove('active');
+    await loadData();renderTabs();renderGrid();renderSettings();
+    toast('已清空全部数据');
+  },'全部删除');
 });
 
 /* 备份导出 */
