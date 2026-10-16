@@ -1,0 +1,17 @@
+{
+  "name": "饿啦",
+  "short_name": "饿啦",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FDF6EC",
+  "theme_color": "#D95F3B",
+  "icons": [
+    {
+      "src": "./icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

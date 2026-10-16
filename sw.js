@@ -1,6 +1,6 @@
 /* 饿啦 离线缓存 Service Worker */
-const CACHE = 'ela-v1';
-const CORE = ['./', './index.html'];
+const CACHE = 'ela-v2';
+const CORE = ['./', './index.html', './manifest.json', './icon-180.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
 });

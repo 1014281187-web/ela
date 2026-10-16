@@ -7,7 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="饿啦">
-<link rel="manifest" id="manifestLink">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
 <title>饿啦</title>
 <style>
 :root{
@@ -1035,23 +1037,9 @@ document.addEventListener('keydown',e=>{
   }catch(e){}
 })();
 
-/* ============ PWA：manifest 与离线缓存 ============ */
+/* ============ PWA：离线缓存 ============ */
 (function(){
   try{
-    const iconUrl=(function(){
-      const links=document.querySelectorAll('link[rel="apple-touch-icon"],link[rel="icon"]');
-      return links.length?links[links.length-1].href:'';
-    })();
-    const manifest={
-      name:'饿啦',short_name:'饿啦',
-      start_url:location.pathname,
-      display:'standalone',
-      background_color:'#FDF6EC',
-      theme_color:'#D95F3B',
-      icons:iconUrl?[{src:iconUrl,sizes:'180x180',type:'image/png'}]:[]
-    };
-    const mLink=document.getElementById('manifestLink');
-    mLink.href=URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:'application/manifest+json'}));
     if('serviceWorker' in navigator && location.protocol==='https:'){
       const swUrl=location.pathname.replace(/[^/]*$/,'')+'sw.js';
       navigator.serviceWorker.register(swUrl).catch(()=>{});
