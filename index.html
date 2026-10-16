@@ -1053,21 +1053,8 @@ document.addEventListener('keydown',e=>{
     const mLink=document.getElementById('manifestLink');
     mLink.href=URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:'application/manifest+json'}));
     if('serviceWorker' in navigator && location.protocol==='https:'){
-      const swCode=
-        "const C='ela-v1;';"+
-        "self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.add(self.registration.scope)).then(()=>self.skipWaiting()))});"+
-        "self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});"+
-        "self.addEventListener('fetch',e=>{"+
-        "if(e.request.method!=='GET')return;"+
-        "e.respondWith("+
-        "caches.match(e.request,{ignoreSearch:true}).then(hit=>{"+
-        "const net=fetch(e.request).then(res=>{if(res&&res.ok){const cp=res.clone();caches.open(C).then(c=>c.put(e.request,cp));}return res;}).catch(()=>hit);"+
-        "return hit||net;"+
-        "}));"+
-        "});";
       const swUrl=location.pathname.replace(/[^/]*$/,'')+'sw.js';
-      const blob=new Blob([swCode],{type:'text/javascript'});
-      navigator.serviceWorker.register(URL.createObjectURL(blob),{scope:location.pathname.replace(/[^/]*$/,'')}).catch(()=>{});
+      navigator.serviceWorker.register(swUrl).catch(()=>{});
     }
   }catch(e){}
 })();
