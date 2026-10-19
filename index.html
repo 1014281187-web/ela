@@ -98,6 +98,8 @@ svg{display:block}
 .chip .cdot{width:8px;height:8px;border-radius:50%;background:var(--c,#C4A98F)}
 .chip.on{background:var(--green);border-color:var(--green);color:#FFF8F0}
 .chip{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+#tabs{-webkit-user-select:none;user-select:none}
+#tabs ::selection{background:transparent}
 .chip.dragging{box-shadow:0 6px 18px rgba(74,55,40,.18)}
 .chip.drag-over{border-color:var(--green);box-shadow:0 0 0 2px var(--celadon) inset}
 .cat-line .mv{color:#B99A85;padding:4px;border-radius:8px}
@@ -732,7 +734,15 @@ function enableTouchDrag(el){
       dragChip.classList.add('dragging');
       if(navigator.vibrate)navigator.vibrate(30);
     },350);
-  },{passive:true});
+    // 屏蔽 iOS 长按呼出的系统方框/放大镜：监听拖动全程并阻止系统选择行为
+    const blockSelect=ev=>{if(dragging)ev.preventDefault();};
+    const stop=()=>{document.removeEventListener('contextmenu',blockCtx,true);document.removeEventListener('selectstart',blockSelect,true);};
+    const blockCtx=ev=>{if(dragging){ev.preventDefault();}};
+    document.addEventListener('contextmenu',blockCtx,true);
+    document.addEventListener('selectstart',blockSelect,true);
+    document.addEventListener('touchend',stop,{once:true});
+    document.addEventListener('touchcancel',stop,{once:true});
+  },{passive:false});
   el.addEventListener('touchmove',e=>{
     if(!dragChip)return;
     const t=e.touches[0];
