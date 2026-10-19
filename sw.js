@@ -1,6 +1,10 @@
 /* 饿啦 离线缓存 Service Worker
-   策略：网络优先（有网拿最新版），断网兜底缓存。确保手机尽快拿到更新。 */
-const CACHE = 'ela-v5';
+   策略：缓存优先 + 后台静默更新（Stale-While-Revalidate 的强化版）。
+   - 打开即秒出（永远先给缓存版，无网也完整可用）
+   - 有网时后台拉最新版写入缓存，下一次打开生效
+   - 首次安装预缓存全部核心文件
+   - 导航请求（打开页面）在缓存缺失时兜底 index.html */
+const CACHE = 'ela-v6';
 const CORE = ['./', './index.html', './manifest.json', './icon-192.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
@@ -17,14 +21,15 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
-      .then(res => {
+    caches.match(e.request, { ignoreSearch: true }).then(hit => {
+      const net = fetch(e.request).then(res => {
         if (res && res.ok) {
           const copy = res.clone();
           caches.open(CACHE).then(c => c.put(e.request, copy));
         }
         return res;
-      })
-      .catch(() => caches.match(e.request, { ignoreSearch: true }).then(hit => hit || caches.match('./index.html')))
+      }).catch(() => hit);
+      return hit || net;
+    })
   );
 });

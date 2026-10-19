@@ -102,6 +102,9 @@ svg{display:block}
 #tabs ::selection{background:transparent}
 .chip.dragging{box-shadow:0 6px 18px rgba(74,55,40,.18)}
 .chip.drag-over{border-color:var(--green);box-shadow:0 0 0 2px var(--celadon) inset}
+.chip .drag-handle{display:inline-flex;align-items:center;color:#C9AEB6;margin-left:2px;touch-action:none}
+.chip .drag-handle svg{margin-block:-2px}
+.chip.on .drag-handle{color:rgba(255,248,240,.75)}
 .cat-line .mv{color:#B99A85;padding:4px;border-radius:8px}
 .cat-line .mv:disabled{opacity:.25;cursor:default}
 .cat-line .mv:not(:disabled):hover{color:var(--green);background:#FAEFE0}
@@ -656,7 +659,7 @@ function renderTabs(){
   let html=`<button class="chip ${state.tab==='all'?'on':''}" data-tab="all">全部 <span class="cnt">${counts.all}</span></button>`;
   for(const c of state.categories){
     html+=`<button class="chip ${state.tab===c.id?'on':''}" data-tab="${c.id}" draggable="true">
-      <span class="cdot" style="--c:${esc(c.color)}"></span>${esc(c.name)} <span class="cnt">${counts[c.id]||0}</span></button>`;
+      <span class="cdot" style="--c:${esc(c.color)}"></span>${esc(c.name)} <span class="cnt">${counts[c.id]||0}</span><span class="drag-handle" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.8"/><circle cx="15" cy="6" r="1.8"/><circle cx="9" cy="12" r="1.8"/><circle cx="15" cy="12" r="1.8"/><circle cx="9" cy="18" r="1.8"/><circle cx="15" cy="18" r="1.8"/></svg></span></button>`;
   }
   el.innerHTML=html;
   el.querySelectorAll('.chip').forEach(ch=>ch.addEventListener('click',()=>{
@@ -724,7 +727,10 @@ function enableTouchDrag(el){
     });
   }
   el.addEventListener('touchstart',e=>{
-    const ch=e.target.closest('.chip');
+    // 只允许从标签右侧的拖动把手启动拖动（从交互上绕开 iOS 长按系统行为）
+    const handle=e.target.closest('.drag-handle');
+    if(!handle)return;
+    const ch=handle.closest('.chip');
     if(!isCatChip(ch))return;
     dragChip=ch;dragging=false;
     const t=e.touches[0];
