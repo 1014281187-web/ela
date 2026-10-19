@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>饿啦 · 自检</title>
+<style>
+body{font-family:-apple-system,sans-serif;background:#FDF6EC;color:#4A3728;padding:20px;max-width:620px;margin:0 auto}
+h2{font-size:20px}
+pre{background:#fff;border:1px solid #F0E3D0;border-radius:12px;padding:14px;font-size:13px;white-space:pre-wrap;word-break:break-all;line-height:1.7}
+button{padding:12px 20px;border-radius:12px;border:1px solid #F0E3D0;background:#D95F3B;color:#fff;font-size:16px;margin:8px 6px 0 0}
+</style>
+</head>
+<body>
+<h2>饿啦 · 手机自检 v2</h2>
+<pre id="out">正在读取…</pre>
+<button onclick="location.reload()">重新检测</button>
+<script>
+(async () => {
+  const out = document.getElementById('out');
+  const L = [];
+  const log = (k, v) => L.push(k + '：' + v);
+  try {
+    // 1. SW 与缓存版本（判断手机跑的哪一版）
+    let swInfo = '无';
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        swInfo = (reg.active ? 'active' : reg.installing ? 'installing' : reg.waiting ? 'waiting' : '?') + ' @ ' + reg.scope;
+      }
+    }
+    log('① ServiceWorker', swInfo);
+    const keys = await caches.keys();
+    log('② 缓存版本', keys.length ? keys.join(', ') : '无');
+    // 2. 打开数据库
+    const db = await new Promise((res, rej) => {
+      const r = indexedDB.open('xiaozao', 1);
+      r.onupgradeneeded = e => {
+        const d = e.target.result;
+        d.createObjectStore('recipes', { keyPath: 'id', autoIncrement: true });
+        d.createObjectStore('categories', { keyPath: 'id', autoIncrement: true });
+      };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    const getAll = s => new Promise((res, rej) => {
+      const rq = db.transaction(s, 'readonly').objectStore(s).getAll();
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => rej(rq.error);
+    });
+    const recipes = await getAll('recipes');
+    const cats = await getAll('categories');
+    log('③ 菜谱总数', recipes.length);
+    log('④ 分类', cats.map(c => c.name).join('、') || '（无）');
+    // 3. 图片状态逐道检查
+    let blobCount = 0, dataURLCount = 0, emptyCount = 0, otherCount = 0;
+    const detail = [];
+    for (const r of recipes) {
+      const imgs = r.images || [];
+      if (!imgs.length) continue;
+      const kinds = [];
+      for (const im of imgs) {
+        if (typeof im === 'string' && im.startsWith('data:')) { dataURLCount++; kinds.push('str✓'); }
+        else if (typeof im === 'object' && im !== null && im.size !== undefined) {
+          kinds.push('blob' + (im.size > 0 ? '(' + Math.round(im.size/1024) + 'KB)' : '(空!)'));
+          blobCount++;
+        }
+        else { emptyCount++; kinds.push('空'); }
+      }
+      detail.push(r.name + '：' + kinds.join('+'));
+    }
+    log('⑤ 图片格式统计', 'dataURL字符串=' + dataURLCount + ' | Blob=' + blobCount + ' | 失效/空=' + emptyCount);
+    log('⑥ 逐道图片', detail.join('；') || '（没有任何菜带图）');
+    // 4. Blob 有效性抽查：读出第一个 Blob 图的字节看是否真的能读
+    if (blobCount > 0) {
+      const withBlob = recipes.find(r => (r.images || []).some(im => im && im.size !== undefined));
+      const b = withBlob.images.find(im => im && im.size !== undefined);
+      try {
+        const buf = await b.slice(0, 4).arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        log('⑦ Blob 抽查', withBlob.name + ' 前4字节: ' + [...bytes].join(',') + (bytes.length ? '（可读）' : '（不可读=已被系统回收）'));
+      } catch (e) {
+        log('⑦ Blob 抽查', withBlob.name + ' 读取抛错：' + e.message + '（已被系统回收）');
+      }
+    }
+    log('⑧ 页面UA', navigator.userAgent.slice(0, 80));
+  } catch (e) {
+    L.push('检测出错：' + (e.message || e));
+  }
+  out.textContent = L.join('\n');
+})();
+</script>
+</body>
+</html>
