@@ -437,6 +437,10 @@ svg{display:block}
           导入备份
         </button>
         <input type="file" id="importInput" accept=".json,application/json" class="hidden">
+        <button class="btn" id="fixImgBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4L15 12l-3-3 2.7-2.7z"/></svg>
+          修复图片显示
+        </button>
         <button class="btn" id="dedupeBtn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>
           重名菜谱整理
@@ -769,8 +773,12 @@ function renderGrid(){
   const grid=$('#grid');
   if(!list.length){
     const isEmpty=state.recipes.length===0;
+    let reason='换个词或换个分类试试。';
+    if(!isEmpty&&state.favOnly)reason='当前开着「只看收藏」（右上角红心），但没有收藏的菜谱——点一下红心关闭即可显示全部。';
+    else if(!isEmpty&&state.tab!=='all')reason=`当前分类「${catName(state.tab)}」下还没有菜谱，点「全部」可看所有菜。`;
+    else if(!isEmpty&&state.q)reason=`没有匹配「${state.q}」的菜谱，换个词试试。`;
     grid.innerHTML=`<div class="empty">${POT_SVG}
-      <p>${isEmpty?'还没有菜谱。点右上角「记一道菜」，把爱吃的做法存进来。':'没有匹配的菜谱，换个词或换个分类试试。'}</p>
+      <p>${isEmpty?'还没有菜谱。点右上角「记一道菜」，把爱吃的做法存进来。':'没有匹配的菜谱，'+reason}</p>
       ${isEmpty?'<p class="sub">支持分类、多图、步骤，做菜时还有大字灶台模式。</p>':''}</div>`;
     return;
   }
@@ -1154,6 +1162,35 @@ let tipsTimer=null;
 $('#tipsSearch').addEventListener('input',e=>{
   clearTimeout(tipsTimer);
   tipsTimer=setTimeout(()=>renderTips(e.target.value),120);
+});
+
+/* 图片格式修复：把库里的旧 Blob 图片转成 dataURL 字符串（iOS 不会回收字符串） */
+let fixImgBtnRunning=false;
+$('#fixImgBtn').addEventListener('click',async()=>{
+  fixImgBtnRunning=true;
+  toast('正在修复图片…');
+  let converted=0,dropped=0,touched=0;
+  const recipes=await idbAll('recipes');
+  for(const r of recipes){
+    const imgs=r.images||[];
+    if(!imgs.length)continue;
+    const outImgs=[];
+    let changed=false;
+    for(const im of imgs){
+      try{
+        if(typeof im==='string'&&im.startsWith('data:')){outImgs.push(im);continue;}
+        if(im&&im.size>0){
+          const du=await blobToDataURL(im);
+          if(du){outImgs.push(du);converted++;changed=true;continue;}
+        }
+        dropped++;changed=true;
+      }catch(_){dropped++;changed=true;}
+    }
+    if(changed){r.images=outImgs;await idbPut('recipes',r);touched++;}
+  }
+  await loadData();renderTabs();renderGrid();renderSettings();
+  fixImgBtnRunning=false;
+  toast(touched?`修复完成：转换 ${converted} 张图，清理失效 ${dropped} 张`:'没有需要修复的图片');
 });
 
 /* 同名菜谱去重：同名中保留信息最全的一道（图片多>步骤多>更新新），合并收藏标记 */
