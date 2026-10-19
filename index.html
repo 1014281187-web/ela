@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#FDF6EC">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -38,7 +38,7 @@ body{
   min-height:100vh;
 }
 button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:none;cursor:pointer}
-input,select,textarea{font-family:inherit;font-size:15px;color:var(--ink)}
+input,select,textarea{font-family:inherit;font-size:16px;color:var(--ink)}
 :focus-visible{outline:2px solid var(--green);outline-offset:2px;border-radius:4px}
 .hidden{display:none!important}
 svg{display:block}
@@ -437,6 +437,10 @@ svg{display:block}
           导入备份
         </button>
         <input type="file" id="importInput" accept=".json,application/json" class="hidden">
+        <button class="btn" id="dedupeBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l5 5L20 6"/></svg>
+          重名菜谱整理
+        </button>
         <button class="btn danger" id="wipeBtn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg>
           清空全部数据
@@ -575,7 +579,40 @@ const idbDel =(s,k)=>idbReq(s,'readwrite',t=>t.delete(k));
 /* ============ 状态 ============ */
 const state={recipes:[],categories:[],tab:'all',favOnly:false,q:''};
 const blobURLs=new Map();
-function blobURL(b){if(!blobURLs.has(b))blobURLs.set(b,URL.createObjectURL(b));return blobURLs.get(b);}
+/* 图片统一按 dataURL 字符串存取（iOS Safari 会回收 IndexedDB 里的 Blob，字符串不受影响）。
+   兼容历史 Blob 数据：读到 Blob 时现场转成 dataURL 并回写。 */
+function blobURL(b){
+  try{
+    if(!b)return '';
+    if(typeof b==='string')return b.startsWith('data:')?b:'';
+    if(!(b instanceof Blob)||!b.size)return '';
+    if(!blobURLs.has(b))blobURLs.set(b,URL.createObjectURL(b));
+    return blobURLs.get(b);
+  }catch(_){return '';}
+}
+async function normalizeImage(img){
+  if(!img)return img;
+  if(typeof img==='string')return img.startsWith('data:')?img:'';
+  if(img instanceof Blob&&img.size>0){
+    try{await img.arrayBuffer();}catch(_){return '';}  // 已失效
+    return await blobToDataURL(img);
+  }
+  return '';
+}
+async function normalizeRecipeImages(r){
+  if(!(r.images||[]).length)return;
+  let changed=false;
+  const out=[];
+  for(const im of r.images){
+    const n=await normalizeImage(im);
+    if(n&&n!==im)changed=true;
+    if(n)out.push(n);
+  }
+  if(changed||out.length!==r.images.length){
+    r.images=out;
+    await idbPut('recipes',r);
+  }
+}
 function catById(id){return state.categories.find(c=>c.id===id);}
 function catColor(id){const c=catById(id);return c?c.color:'#C4A98F';}
 function catName(id){const c=catById(id);return c?c.name:'未分类';}
@@ -585,6 +622,8 @@ async function loadData(){
   cats.sort((a,b)=>(a.order??a.id)-(b.order??b.id));
   state.categories=cats;
   state.recipes=(await idbAll('recipes')).sort((a,b)=>b.createdAt-a.createdAt);
+  // 历史数据迁移：把旧 Blob 图片转为 dataURL 字符串（iOS 不再回收）
+  for(const r of state.recipes)await normalizeRecipeImages(r);
 }
 async function saveCatOrder(){
   for(let i=0;i<state.categories.length;i++){
@@ -739,7 +778,7 @@ function renderGrid(){
     const cover=r.images&&r.images[0];
     return `<article class="card" data-id="${r.id}" style="--i:${i}" tabindex="0" role="button" aria-label="${esc(r.name)}">
       <div class="cover">
-        ${cover?`<img src="${blobURL(cover)}" alt="">`:`<div class="ph">${POT_SVG}</div>`}
+        ${cover&&blobURL(cover)?`<img src="${blobURL(cover)}" alt="">`:`<div class="ph">${POT_SVG}</div>`}
         <button class="heart ${r.favorite?'faved':''}" data-heart="${r.id}" aria-label="收藏">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
         </button>
@@ -800,7 +839,7 @@ function renderDetail(){
       </div>
     </div>
     <div class="gallery-main" id="gMain">${
-      imgs[detailIdx]?`<img src="${blobURL(imgs[detailIdx])}" alt="">`:`<div class="ph">${POT_SVG}</div>`
+      (imgs[detailIdx]&&blobURL(imgs[detailIdx]))?`<img src="${blobURL(imgs[detailIdx])}" alt="">`:`<div class="ph">${POT_SVG}</div>`
     }</div>
     ${imgs.length>1?`<div class="thumbs" id="gThumbs">${imgs.map((b,i)=>
       `<button class="${i===detailIdx?'on':''}" data-i="${i}" aria-label="第 ${i+1} 张图"><img src="${blobURL(b)}" alt=""></button>`).join('')}</div>`:''}
@@ -888,7 +927,7 @@ function renderFormImages(){
     </button>`;
   g.querySelectorAll('.rm').forEach(b=>b.addEventListener('click',()=>{
     const i=Number(b.dataset.i);
-    URL.revokeObjectURL(formImages[i].url);
+    if(formImages[i].url.startsWith('blob:'))URL.revokeObjectURL(formImages[i].url);
     formImages.splice(i,1);renderFormImages();
   }));
   $('#addImgBtn').addEventListener('click',()=>$('#imgInput').click());
@@ -896,8 +935,8 @@ function renderFormImages(){
 function openForm(recipe,fromDetail){
   editingId=recipe?recipe.id:null;
   detailWasOpen=!!fromDetail;
-  formImages.forEach(im=>URL.revokeObjectURL(im.url));
-  formImages=(recipe&&recipe.images||[]).map(b=>({blob:b,url:blobURL(b)}));
+  formImages.forEach(im=>{if(im.url.startsWith('blob:'))URL.revokeObjectURL(im.url);});
+  formImages=(recipe&&recipe.images||[]).map(b=>({blob:b,url:blobURL(b)})).filter(im=>im.url);
   $('#formTitle').textContent=recipe?'编辑菜谱':'记一道菜';
   $('#fName').value=recipe?recipe.name:'';
   buildCatOptions(recipe?recipe.categoryId:null);
@@ -934,8 +973,7 @@ async function addFormImages(files){
   for(const f of files){
     try{
       const blob=await compressImage(f);
-      formImages.push({blob,url:URL.createObjectURL(blob)});
-    }catch(err){toast('有一张图片读取失败，已跳过');}
+      formImages.push({blob,url:URL.createObjectURL(blob)});    }catch(err){toast('有一张图片读取失败，已跳过');}
   }
   renderFormImages();
 }
@@ -959,10 +997,10 @@ $('#fSave').addEventListener('click',async()=>{
     categoryId=Number($('#fCat').value);
   }
   const splitLines=v=>v.split('\n').map(s=>s.trim()).filter(Boolean);
-  const rec={
+      const rec={
     name,
     categoryId,
-    images:formImages.map(im=>im.blob),
+    images:await Promise.all(formImages.map(async im=>typeof im.blob==='string'?im.blob:await blobToDataURL(im.blob))),
     ingredients:splitLines($('#fIng').value),
     seasonings:splitLines($('#fSeasoning').value),
     steps:splitLines($('#fSteps').value),
@@ -1118,6 +1156,38 @@ $('#tipsSearch').addEventListener('input',e=>{
   tipsTimer=setTimeout(()=>renderTips(e.target.value),120);
 });
 
+/* 同名菜谱去重：同名中保留信息最全的一道（图片多>步骤多>更新新），合并收藏标记 */
+$('#dedupeBtn').addEventListener('click',()=>{
+  const groups={};
+  for(const r of state.recipes)(groups[r.name]=groups[r.name]||[]).push(r);
+  const dupGroups=Object.values(groups).filter(g=>g.length>1);
+  if(!dupGroups.length)return toast('没有发现重名菜谱，无需整理');
+  const total=dupGroups.reduce((s,g)=>s+g.length-1,0);
+  showConfirm(`发现 ${dupGroups.length} 组重名菜谱，将删除多余的 ${total} 道（每组保留内容最全的一道），确定整理吗？`,async()=>{
+    let removed=0;
+    for(const g of dupGroups){
+      g.sort((a,b)=>
+        ((b.images||[]).length-(a.images||[]).length)||
+        ((b.steps||[]).length-(a.steps||[]).length)||
+        ((b.updatedAt||0)-(a.updatedAt||0))
+      );
+      const keep=g[0];
+      keep.favorite=g.some(r=>r.favorite)||!!keep.favorite;
+      // 备份里更全的食材/备注做温和补齐
+      for(const other of g.slice(1)){
+        if(!(keep.notes)&&other.notes)keep.notes=other.notes;
+        if((keep.ingredients||[]).length<(other.ingredients||[]).length)keep.ingredients=other.ingredients;
+        if((keep.seasonings||[]).length<(other.seasonings||[]).length)keep.seasonings=other.seasonings;
+        await idbDel('recipes',other.id);
+        removed++;
+      }
+      await idbPut('recipes',keep);
+    }
+    await loadData();renderTabs();renderGrid();renderSettings();
+    toast(`已整理，删除 ${removed} 道重复菜谱`);
+  },'去重整理');
+});
+
 /* 清空全部数据（菜谱+分类都删，二次确认） */
 $('#wipeBtn').addEventListener('click',()=>{
   const n=state.recipes.length;
@@ -1139,6 +1209,7 @@ $('#wipeBtn').addEventListener('click',()=>{
 
 /* 备份导出 */
 function blobToDataURL(b){
+  if(typeof b==='string')return Promise.resolve(b.startsWith('data:')?b:'');
   return new Promise((res,rej)=>{
     const r=new FileReader();
     r.onload=()=>res(r.result);r.onerror=()=>rej(r.error);
@@ -1150,7 +1221,10 @@ $('#exportBtn').addEventListener('click',async()=>{
   const recipes=[];
   for(const r of state.recipes){
     const images=[];
-    for(const b of (r.images||[]))images.push(await blobToDataURL(b));
+    for(const b of (r.images||[])){
+      const du=await blobToDataURL(b);
+      if(du)images.push(du);
+    }
     recipes.push({...r,images});
   }
   const data={app:'xiaozao',version:1,exportedAt:new Date().toISOString(),
@@ -1176,15 +1250,26 @@ $('#importInput').addEventListener('change',async e=>{
       const name=String(c.name).slice(0,20);
       const existing=state.categories.find(x=>x.name===name);
       if(existing){catMap[c.id]=existing.id;continue;}
-      const id=await idbPut('categories',{name,color:c.color||PALETTE[state.categories.length%PALETTE.length]});
-      state.categories.push({id,name,color:c.color||PALETTE[(state.categories.length)%PALETTE.length]});
+      const id=await idbPut('categories',{name,color:c.color||PALETTE[state.categories.length%PALETTE.length],order:c.order});
+      state.categories.push({id,name,color:c.color||PALETTE[(state.categories.length)%PALETTE.length],order:c.order});
       catMap[c.id]=id;
+    }
+    // 分类排序迁移：备份里的分类顺序按 order 落位（操作的是分类对象，不是 id）
+    const backupOrderIds=(data.categories||[]).map(c=>catMap[c.id]).filter(Boolean);
+    if(backupOrderIds.length){
+      const ordered=backupOrderIds.map(id=>state.categories.find(c=>c.id===id)).filter(Boolean);
+      const rest=state.categories.filter(c=>!backupOrderIds.includes(c.id));
+      state.categories=[...ordered,...rest];
+      await saveCatOrder();
     }
     let added=0,updated=0,skipped=0;
     for(const r of data.recipes){
       const images=[];
       for(const du of (r.images||[])){
-        try{images.push(await (await fetch(du)).blob());}catch(_){}
+        try{
+          if(typeof du==='string'&&du.startsWith('data:')){images.push(du);continue;} // 新格式直通
+          images.push(await (await fetch(du)).blob());
+        }catch(_){}
       }
       const incoming={
         name:String(r.name||'未命名菜谱'),
@@ -1223,9 +1308,19 @@ $('#importInput').addEventListener('change',async e=>{
       await idbPut('recipes',incoming);
       added++;
     }
+    // 悬空分类修复：categoryId 指向不存在分类的菜归为未分类，避免分类对不上
+    const validCatIds=new Set(state.categories.map(c=>c.id));
+    let fixed=0;
+    for(const r of state.recipes){
+      if(r.categoryId!=null&&!validCatIds.has(r.categoryId)){
+        r.categoryId=null;
+        await idbPut('recipes',r);
+        fixed++;
+      }
+    }
     await loadData();renderTabs();renderGrid();renderSettings();
     $('#settingsOverlay').classList.add('hidden');
-    toast(`新增 ${added} 道 · 更新 ${updated} 道 · 相同跳过 ${skipped} 道`);
+    toast(`新增 ${added} 道 · 更新 ${updated} 道 · 相同跳过 ${skipped} 道`+(fixed?` · 修复 ${fixed} 道分类`:''));
   }catch(err){
     toast('导入失败：这不是有效的备份文件');
   }
