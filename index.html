@@ -244,22 +244,22 @@ svg{display:block}
 .tip-empty{text-align:center;color:var(--ink2);padding:50px 20px;font-size:14px}
 
 /* ---------- 灶台模式 ---------- */
-#cookOverlay{background:var(--green-deep);color:#FFF8F0;display:flex;flex-direction:column}
-.cook-bar{height:4px;background:rgba(255,248,240,.16);flex:none}
+#cookOverlay{background:var(--paper);color:var(--ink);display:flex;flex-direction:column}
+.cook-bar{height:4px;background:var(--line);flex:none}
 .cook-bar i{display:block;height:100%;background:var(--yolk);transition:width .25s ease}
 .cook-top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 22px 0;flex:none}
-.cook-top .cname{font-family:var(--font-display);font-size:17px;letter-spacing:1px;color:#F3E3CF}
-.cook-top .prog{font-family:var(--font-mono);font-size:13px;color:var(--celadon)}
+.cook-top .cname{font-family:var(--font-display);font-size:17px;letter-spacing:1px;color:var(--ink)}
+.cook-top .prog{font-family:var(--font-mono);font-size:13px;color:var(--green)}
 .cook-btn{
   display:inline-flex;align-items:center;gap:6px;padding:8px 13px;border-radius:10px;
-  border:1px solid rgba(255,248,240,.3);color:#F3E3CF;font-size:14px;
+  border:1px solid var(--line);color:var(--ink2);font-size:14px;background:var(--card);
 }
-.cook-btn:hover{background:rgba(255,248,240,.12)}
-.cook-body{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:20px 26px;overflow:hidden}
+.cook-btn:hover{background:#FAEFE0;border-color:var(--celadon);color:var(--green)}
+.cook-body{flex:1;display:flex;align-items:center;justify-content:center;position:relative;padding:20px 26px;overflow-y:auto}
 .cook-ghost{
   position:absolute;right:-2vw;bottom:-9vw;
   font-family:var(--font-display);font-weight:700;
-  font-size:min(46vw,380px);line-height:1;color:var(--yolk);opacity:.09;
+  font-size:min(46vw,380px);line-height:1;color:var(--celadon);opacity:.25;
   user-select:none;pointer-events:none;font-variant-numeric:tabular-nums;
 }
 .cook-step{
@@ -268,7 +268,7 @@ svg{display:block}
   white-space:pre-wrap;animation:stepin .3s ease both;
 }
 @keyframes stepin{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
-.cook-step.nostep{color:var(--celadon);font-size:22px}
+.cook-step.nostep{color:var(--ink2);font-size:22px}
 .cook-foot{display:flex;align-items:center;justify-content:center;gap:14px;padding:18px 22px calc(26px + env(safe-area-inset-bottom));flex:none}
 .cook-nav{
   min-width:132px;padding:14px 22px;border-radius:14px;font-size:17px;
@@ -276,19 +276,19 @@ svg{display:block}
   transition:transform .12s ease,opacity .12s ease;
 }
 .cook-nav:active{transform:scale(.97)}
-.cook-nav.prev{border:1px solid rgba(255,248,240,.34);color:#F6E7D3}
+.cook-nav.prev{border:1px solid var(--line);color:var(--ink2);background:var(--card)}
 .cook-nav.prev:disabled{opacity:.35}
-.cook-nav.next{background:var(--celadon);color:var(--green-deep);font-weight:600}
-.cook-nav.next.done{background:var(--yolk)}
+.cook-nav.next{background:var(--green);color:#FFF8F0;font-weight:600}
+.cook-nav.next.done{background:var(--yolk);color:var(--ink)}
+/* 食材面板：内嵌在标题下方展开，把步骤内容往下推，不遮挡 */
 .ing-panel{
-  position:absolute;left:0;right:0;bottom:0;max-height:62%;overflow-y:auto;
-  background:#FFF8F0;color:var(--ink);border-radius:20px 20px 0 0;
-  padding:20px 22px calc(24px + env(safe-area-inset-bottom));
-  box-shadow:0 -10px 30px rgba(0,0,0,.3);animation:slideup .22s ease both;
+  flex:none;overflow-y:auto;
+  background:var(--card);border-bottom:1px solid var(--line);
+  padding:14px 22px 16px;
 }
-.ing-panel h4{font-size:13px;letter-spacing:4px;color:var(--ink2);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.ing-panel h4{font-size:13px;letter-spacing:4px;color:var(--ink2);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
 .ing-panel ul{list-style:none}
-.ing-panel li{padding:9px 0;border-bottom:1px solid var(--line);font-size:16px}
+.ing-panel li{padding:7px 0;border-bottom:1px dashed var(--line);font-size:16px}
 .ing-panel li:last-child{border-bottom:none}
 .ing-panel li.ing-sep{border-bottom:none;text-align:center;color:var(--ink2);font-size:13px;letter-spacing:4px;padding:6px 0 2px}
 
@@ -497,13 +497,13 @@ svg{display:block}
       </button>
     </div>
   </div>
+  <div class="ing-panel hidden" id="ingPanel">
+    <h4>食材 · 调料 <button class="btn icon" id="ingClose" aria-label="收起" style="padding:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></h4>
+    <ul id="ingPanelList"></ul>
+  </div>
   <div class="cook-body">
     <span class="cook-ghost" id="cookGhost" aria-hidden="true"></span>
     <div class="cook-step" id="cookStep"></div>
-    <div class="ing-panel hidden" id="ingPanel">
-      <h4>食材 <button class="btn icon" id="ingClose" aria-label="收起" style="padding:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></h4>
-      <ul id="ingPanelList"></ul>
-    </div>
   </div>
   <div class="cook-foot">
     <button class="cook-nav prev" id="cookPrev">
