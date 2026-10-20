@@ -102,8 +102,15 @@ svg{display:block}
 #tabs ::selection{background:transparent}
 .chip.dragging{box-shadow:0 6px 18px rgba(74,55,40,.18)}
 .chip.drag-over{border-color:var(--green);box-shadow:0 0 0 2px var(--celadon) inset}
-.chip .drag-handle{display:inline-flex;align-items:center;color:#C9AEB6;margin-left:2px;touch-action:none}
-.chip .drag-handle svg{margin-block:-2px}
+.chip .drag-handle{
+  display:inline-flex;align-items:center;color:#C9AEB6;margin-left:2px;
+  touch-action:none;
+  -webkit-user-select:none;user-select:none;
+  -webkit-touch-callout:none;
+  -webkit-user-drag:none;
+  cursor:grab;
+}
+.chip .drag-handle svg{margin-block:-2px;pointer-events:none}
 .chip.on .drag-handle{color:rgba(255,248,240,.75)}
 .cat-line .mv{color:#B99A85;padding:4px;border-radius:8px}
 .cat-line .mv:disabled{opacity:.25;cursor:default}
@@ -732,6 +739,8 @@ function enableTouchDrag(el){
     if(!handle)return;
     const ch=handle.closest('.chip');
     if(!isCatChip(ch))return;
+    // 立即阻止 iOS 的系统文本选择/放大镜（必须在非被动监听里 preventDefault 才有效）
+    e.preventDefault();
     dragChip=ch;dragging=false;
     const t=e.touches[0];
     startX=t.clientX;startY=t.clientY;
@@ -740,14 +749,6 @@ function enableTouchDrag(el){
       dragChip.classList.add('dragging');
       if(navigator.vibrate)navigator.vibrate(30);
     },350);
-    // 屏蔽 iOS 长按呼出的系统方框/放大镜：监听拖动全程并阻止系统选择行为
-    const blockSelect=ev=>{if(dragging)ev.preventDefault();};
-    const stop=()=>{document.removeEventListener('contextmenu',blockCtx,true);document.removeEventListener('selectstart',blockSelect,true);};
-    const blockCtx=ev=>{if(dragging){ev.preventDefault();}};
-    document.addEventListener('contextmenu',blockCtx,true);
-    document.addEventListener('selectstart',blockSelect,true);
-    document.addEventListener('touchend',stop,{once:true});
-    document.addEventListener('touchcancel',stop,{once:true});
   },{passive:false});
   el.addEventListener('touchmove',e=>{
     if(!dragChip)return;
