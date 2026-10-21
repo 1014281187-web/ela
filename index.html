@@ -1520,7 +1520,33 @@ document.addEventListener('keydown',e=>{
   try{
     if('serviceWorker' in navigator && location.protocol==='https:'){
       const swUrl=location.pathname.replace(/[^/]*$/,'')+'sw.js';
-      navigator.serviceWorker.register(swUrl).catch(()=>{});
+      navigator.serviceWorker.register(swUrl).then(reg=>{
+        // 新版本等待激活时，提示用户刷新
+        const showUpdate=()=>{
+          let bar=document.getElementById('updateBar');
+          if(!bar){
+            bar=document.createElement('div');
+            bar.id='updateBar';
+            bar.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom));z-index:90;background:var(--ink);color:#FFF8F0;padding:12px 18px;border-radius:999px;font-size:14px;display:flex;gap:12px;align-items:center;box-shadow:0 8px 24px rgba(74,55,40,.25);white-space:nowrap';
+            bar.innerHTML='发现新版本 <button id="updateGo" style="background:var(--chili);color:#FFF8F0;border:none;border-radius:999px;padding:6px 14px;font-size:13px;cursor:pointer">立即更新</button>';
+            document.body.appendChild(bar);
+            document.getElementById('updateGo').addEventListener('click',()=>{
+              navigator.serviceWorker.addEventListener('controllerchange',()=>location.reload(),{once:true});
+              if(navigator.serviceWorker.controller){navigator.serviceWorker.controller.postMessage('skip');}
+              else location.reload();
+            });
+          }
+          bar.style.display='flex';
+        };
+        if(reg.waiting&&navigator.serviceWorker.controller)showUpdate();
+        reg.addEventListener('updatefound',()=>{
+          const nw=reg.installing;
+          if(!nw)return;
+          nw.addEventListener('statechange',()=>{
+            if(nw.state==='installed'&&navigator.serviceWorker.controller)showUpdate();
+          });
+        });
+      }).catch(()=>{});
     }
   }catch(e){}
 })();
