@@ -102,16 +102,6 @@ svg{display:block}
 #tabs ::selection{background:transparent}
 .chip.dragging{box-shadow:0 6px 18px rgba(74,55,40,.18)}
 .chip.drag-over{border-color:var(--green);box-shadow:0 0 0 2px var(--celadon) inset}
-.chip .drag-handle{
-  display:inline-flex;align-items:center;color:#C9AEB6;margin-left:2px;
-  touch-action:none;
-  -webkit-user-select:none;user-select:none;
-  -webkit-touch-callout:none;
-  -webkit-user-drag:none;
-  cursor:grab;
-}
-.chip .drag-handle svg{margin-block:-2px;pointer-events:none}
-.chip.on .drag-handle{color:rgba(255,248,240,.75)}
 .cat-line .mv{color:#B99A85;padding:4px;border-radius:8px}
 .cat-line .mv:disabled{opacity:.25;cursor:default}
 .cat-line .mv:not(:disabled):hover{color:var(--green);background:#FAEFE0}
@@ -384,9 +374,22 @@ svg{display:block}
   <div class="wrap" style="max-width:640px">
     <div class="topbar">
       <span class="title" id="formTitle">记一道菜</span>
-      <button class="btn icon" id="formClose" aria-label="关闭">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-      </button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn" id="pasteBtn" style="padding:8px 13px;font-size:13px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>
+          粘贴文字
+        </button>
+        <button class="btn icon" id="formClose" aria-label="关闭">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="field hidden" id="pasteArea">
+      <label for="pasteText">把整段菜谱文字粘到这里 <span style="letter-spacing:0">（自动识别菜名、食材、调料、步骤）</span></label>
+      <textarea id="pasteText" style="min-height:120px" placeholder="例如：&#10;鱼香茄子&#10;食材：长茄子两根、西红柿1个、青椒1个、蒜&#10;调料：盐、生抽、老抽、白糖、淀粉&#10;做法：&#10;1. 茄子去皮切块，加盐腌5-10分钟&#10;2. 热锅下油炸软捞出&#10;3. 爆香蒜末，倒回茄子加调料翻炒收汁"></textarea>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <button class="btn primary" id="pasteParse" style="flex:1">识别并填写</button>
+      </div>
     </div>
     <div class="field">
       <label for="fName">菜名</label>
@@ -437,7 +440,7 @@ svg{display:block}
       </button>
     </div>
     <div class="set-block">
-      <h4>分类</h4>
+      <h4>分类 <span style="letter-spacing:0;font-weight:400">（用 ↑↓ 调整顶部标签顺序）</span></h4>
       <div id="catList"></div>
       <div class="add-cat">
         <input type="text" id="newCatName" placeholder="新分类名称，如：家常菜">
@@ -666,7 +669,7 @@ function renderTabs(){
   let html=`<button class="chip ${state.tab==='all'?'on':''}" data-tab="all">全部 <span class="cnt">${counts.all}</span></button>`;
   for(const c of state.categories){
     html+=`<button class="chip ${state.tab===c.id?'on':''}" data-tab="${c.id}" draggable="true">
-      <span class="cdot" style="--c:${esc(c.color)}"></span>${esc(c.name)} <span class="cnt">${counts[c.id]||0}</span><span class="drag-handle" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.8"/><circle cx="15" cy="6" r="1.8"/><circle cx="9" cy="12" r="1.8"/><circle cx="15" cy="12" r="1.8"/><circle cx="9" cy="18" r="1.8"/><circle cx="15" cy="18" r="1.8"/></svg></span></button>`;
+      <span class="cdot" style="--c:${esc(c.color)}"></span>${esc(c.name)} <span class="cnt">${counts[c.id]||0}</span></button>`;
   }
   el.innerHTML=html;
   el.querySelectorAll('.chip').forEach(ch=>ch.addEventListener('click',()=>{
@@ -717,67 +720,8 @@ function enableTabDrag(el){
   enableTouchDrag(el);
 }
 
-/* 触屏长按拖动排序（iOS/Android 上 HTML5 DnD 不生效，用 touch 事件模拟） */
-function enableTouchDrag(el){
-  let dragChip=null,startX=0,startY=0,longPress=null,dragging=false;
-  const isCatChip=ch=>ch&&ch.dataset.tab&&ch.dataset.tab!=='all';
-  function commitMove(target){
-    if(!dragChip||!target||target===dragChip)return;
-    const fromIdx=state.categories.findIndex(c=>String(c.id)===dragChip.dataset.tab);
-    const toIdx=state.categories.findIndex(c=>String(c.id)===target.dataset.tab);
-    if(fromIdx<0||toIdx<0)return;
-    const [moved]=state.categories.splice(fromIdx,1);
-    state.categories.splice(toIdx,0,moved);
-    saveCatOrder().then(()=>{
-      renderTabs();
-      if(!$('#settingsOverlay').classList.contains('hidden'))renderSettings();
-    });
-  }
-  el.addEventListener('touchstart',e=>{
-    // 只允许从标签右侧的拖动把手启动拖动（从交互上绕开 iOS 长按系统行为）
-    const handle=e.target.closest('.drag-handle');
-    if(!handle)return;
-    const ch=handle.closest('.chip');
-    if(!isCatChip(ch))return;
-    // 立即阻止 iOS 的系统文本选择/放大镜（必须在非被动监听里 preventDefault 才有效）
-    e.preventDefault();
-    dragChip=ch;dragging=false;
-    const t=e.touches[0];
-    startX=t.clientX;startY=t.clientY;
-    longPress=setTimeout(()=>{
-      dragging=true;
-      dragChip.classList.add('dragging');
-      if(navigator.vibrate)navigator.vibrate(30);
-    },350);
-  },{passive:false});
-  el.addEventListener('touchmove',e=>{
-    if(!dragChip)return;
-    const t=e.touches[0];
-    if(!dragging){
-      if(Math.abs(t.clientX-startX)>10||Math.abs(t.clientY-startY)>10){
-        clearTimeout(longPress);dragChip=null;
-      }
-      return;
-    }
-    e.preventDefault();
-    // 命中手指下方（非拖动中）的 chip，实时交换
-    dragChip.style.pointerEvents='none';
-    const under=document.elementFromPoint(t.clientX,t.clientY);
-    dragChip.style.pointerEvents='';
-    const target=under&&under.closest('.chip');
-    if(isCatChip(target))commitMove(target);
-  },{passive:false});
-  el.addEventListener('touchend',()=>{
-    clearTimeout(longPress);
-    if(dragChip)dragChip.classList.remove('dragging');
-    dragChip=null;dragging=false;
-  });
-  el.addEventListener('touchcancel',()=>{
-    clearTimeout(longPress);
-    if(dragChip)dragChip.classList.remove('dragging');
-    dragChip=null;dragging=false;
-  });
-}
+/* 触屏拖动已移除：排序统一在设置页用 ↑↓ 按钮调整（iOS 长按会呼出系统方框，无法禁用） */
+function enableTouchDrag(el){}
 
 function filteredRecipes(){
   const q=state.q.trim().toLowerCase();
@@ -988,6 +932,94 @@ function closeForm(){
   editingId=null;
   if(detailWasOpen&&detailId!=null){/* 重新打开详情 */}
 }
+/* ============ 粘贴文字智能解析 ============ */
+$('#pasteBtn').addEventListener('click',()=>{
+  const area=$('#pasteArea');
+  area.classList.toggle('hidden');
+  if(!area.classList.contains('hidden')){
+    $('#pasteText').focus();
+    area.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+});
+$('#pasteParse').addEventListener('click',()=>{
+  const raw=$('#pasteText').value;
+  if(!raw.trim())return toast('先粘贴菜谱文字');
+  const parsed=parseRecipeText(raw);
+  if(!parsed.name&&!parsed.ingredients.length&&!parsed.seasonings.length&&!parsed.steps.length)
+    return toast('没识别出内容，检查一下文字格式');
+  // 填表（只覆盖识别出的部分，留空的保持原样）
+  if(parsed.name)$('#fName').value=parsed.name;
+  if(parsed.ingredients.length)$('#fIng').value=parsed.ingredients.join('\n');
+  if(parsed.seasonings.length)$('#fSeasoning').value=parsed.seasonings.join('\n');
+  if(parsed.steps.length)$('#fSteps').value=parsed.steps.join('\n');
+  $('#pasteArea').classList.add('hidden');
+  $('#pasteText').value='';
+  toast(`识别完成：${parsed.name?'菜名、':''}${parsed.ingredients.length}种食材、${parsed.seasonings.length}种调料、${parsed.steps.length}步`);
+});
+/* 解析规则：
+   - 菜名：首行（无分隔符的短行），或「菜名：」前缀
+   - 分区：食材/用料/原料 → 食材；调料/佐料/调味 → 调料；步骤/做法/做法步骤/制作 → 步骤
+   - 未标注分区时：含「：」且带单位/数量的行视为食材；1. 2. 或 第X步 开头视为步骤 */
+function parseRecipeText(raw){
+  const lines=raw.split('\n').map(s=>s.trim()).filter(Boolean);
+  const out={name:'',ingredients:[],seasonings:[],steps:[]};
+  let section=null; // 'ing' | 'sea' | 'step'
+  const secMatch=t=>{
+    if(/^(食材|用料|原料|主料|材料)/.test(t))return 'ing';
+    if(/^(调料|佐料|调味|辅料)/.test(t))return 'sea';
+    if(/^(步骤|做法|做法步骤|制作|烹饪|流程)/.test(t))return 'step';
+    return null;
+  };
+  const stripBullet=t=>t.replace(/^[-•·●○\d]+[.、)）]?\s*/,'').replace(/^[（(]\d+[)）]\s*/,'').trim();
+  // 菜名：找「菜名：」前缀，否则首行短文本（≤12字、无标点冒号）
+  for(let i=0;i<Math.min(lines.length,4);i++){
+    const m=lines[i].match(/^(?:菜名|菜谱名)[：:]\s*(.+)$/);
+    if(m){out.name=m[1].trim();lines.splice(i,1);break;}
+  }
+  if(!out.name&&lines.length){
+    const first=stripBullet(lines[0]);
+    if(first.length<=12&&!/[：:；;]/.test(first)&&!secMatch(first)){out.name=first;lines.shift();}
+  }
+  // 逐行归类
+  for(const line of lines){
+    const t=stripBullet(line);
+    if(!t)continue;
+    // 「食材：A、B、C」同行带内容：换区并把冒号后的内容拆条归入
+    const inlineSec=t.match(/^([^：:]{1,6})[：:]\s*(.+)$/);
+    if(inlineSec){
+      const sec=secMatch(inlineSec[1]);
+      if(sec){
+        section=sec;
+        const rest=inlineSec[2];
+        const items=rest.split(/[、，,;；]/).map(x=>x.trim()).filter(Boolean);
+        if(sec==='ing')out.ingredients.push(...items);
+        else if(sec==='sea')out.seasonings.push(...items);
+        else out.steps.push(...items);
+        continue;
+      }
+    }
+    const sec=secMatch(t.split(/[：:]/)[0].trim())||secMatch(t);
+    if(sec){section=sec;continue;}  // 「食材：」单独成行换区
+    if(!section){
+      // 未标注分区：启发式
+      if(/^\d+[.、)）]/.test(line.trim())||/^第[一二三四五六七八九十\d]+步/.test(t)){out.steps.push(t);continue;}
+      if(t.includes('：')||t.includes(':')){
+        // 形如「生抽：2勺」当调料；「番茄：2个」当食材——按常见调料名单判断
+        const head=t.split(/[：:]/)[0].trim();
+        out[SEASONING_HEADS.has(head)?'seasonings':'ingredients'].push(t);
+        continue;
+      }
+      out.ingredients.push(t);continue;
+    }
+    if(section==='ing')out.ingredients.push(t);
+    else if(section==='sea')out.seasonings.push(t);
+    else out.steps.push(t);
+  }
+  // 步骤内若混入「食材：xxx」小节已由 section 切换处理
+  return out;
+}
+const SEASONING_HEADS=new Set(['盐','糖','白糖','冰糖','生抽','老抽','蚝油','料酒','醋','香醋','陈醋','米醋','香油','芝麻油','味精','鸡精','十三香','五香粉','胡椒粉','黑胡椒','白胡椒','花椒','八角','桂皮','香叶','淀粉','水淀粉','豆瓣酱','番茄酱','食用油','油','芝麻','辣椒','干辣椒','辣椒面','姜','蒜','葱','葱姜蒜']);
+
 $('#fCat').addEventListener('change',()=>{
   const isNew=$('#fCat').value==='__new';
   $('#fNewCat').classList.toggle('hidden',!isNew);
