@@ -4,7 +4,7 @@
    - 有网时后台拉最新版写入缓存，下一次打开生效
    - 首次安装预缓存全部核心文件
    - 导航请求（打开页面）在缓存缺失时兜底 index.html */
-const CACHE = 'ela-v7';
+const CACHE = 'ela-v8';
 const CORE = ['./', './index.html', './manifest.json', './icon-192.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));

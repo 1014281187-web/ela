@@ -1,11 +1,16 @@
 {
+  "id": "/ela/",
   "name": "饿啦",
   "short_name": "饿啦",
+  "description": "我的家常菜谱",
+  "lang": "zh-CN",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
   "background_color": "#FDF6EC",
   "theme_color": "#D95F3B",
+  "categories": ["food", "lifestyle"],
   "icons": [
     {
       "src": "./icon-192.png",
