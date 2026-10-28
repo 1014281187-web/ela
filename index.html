@@ -325,6 +325,13 @@ svg{display:block}
   .btn .btxt{display:none}
   .btn{padding:10px 12px}
   .btn#addBtn .btxt{display:inline}
+  /* 工具栏合并为一行：搜索框弹性伸展，右侧依次为设置/收藏/记菜 */
+  .toolbar{flex-wrap:nowrap;padding:14px 0 12px;gap:8px}
+  .search-box{min-width:0;flex:1}
+  .search-box input{padding:10px 12px 10px 36px;font-size:16px}
+  .btn.icon{padding:10px}
+  .btn#addBtn{padding:10px 14px}
+  .btn#addBtn .btxt{font-size:14px}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
